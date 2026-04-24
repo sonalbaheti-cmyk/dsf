@@ -115,8 +115,7 @@ function buildCleverTapPayload(customer: any): any {
     customer.displayName ||
     `${customer.firstName || ''} ${customer.lastName || ''}`.trim();
 
-  // Use phone as identity (with country code e.g. +919876543210)
-  // fallback to email, then shopify customer ID
+  // Phone as identity → fallback email → fallback shopify ID
   const identity = phone || email || customerId;
 
   return {
@@ -169,11 +168,9 @@ async function sendToCleverTap(payload: any): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
-    // Get raw body for HMAC verification
     const buffer = await request.arrayBuffer();
     const body = Buffer.from(buffer);
 
-    // Verify Shopify webhook
     if (!verifyShopifyWebhook(request, body)) {
       return NextResponse.json(
         { error: 'Invalid Shopify HMAC' },
@@ -181,17 +178,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse payload
     const payload = JSON.parse(body.toString('utf8'));
 
-    // Get webhook metadata
     const topic = request.headers.get('X-Shopify-Topic') || 'unknown';
     const shopDomain = request.headers.get('X-Shopify-Shop-Domain') || 'unknown';
     const webhookId = request.headers.get('X-Shopify-Webhook-Id') || 'unknown';
 
     console.log('Webhook received', { topic, shopDomain, webhookId });
 
-    // Extract customer ID
     const customerId = extractCustomerId(payload);
 
     if (!customerId) {
@@ -199,7 +193,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No customer ID found' }, { status: 400 });
     }
 
-    // Fetch latest customer from Shopify
     const latestCustomer = await fetchLatestCustomer(customerId);
 
     if (!latestCustomer) {
@@ -207,14 +200,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
     }
 
-    // Build and send CleverTap payload
     const ctPayload = buildCleverTapPayload(latestCustomer);
     const ctResponse = await sendToCleverTap(ctPayload);
+
+    const identity = latestCustomer.defaultPhoneNumber?.phoneNumber
+      || latestCustomer.defaultEmailAddress?.emailAddress
+      || customerId;
 
     console.log('Synced to CleverTap', {
       topic,
       customerId,
-      identity: latestCustomer.defaultPhoneNumber?.phoneNumber || latestCustomer.defaultEmailAddress?.emailAddress || customerId,
+      identity,
       tags: latestCustomer.tags,
       ctResponse,
     });
@@ -222,6 +218,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       customerId,
+      identity,
       tags: latestCustomer.tags,
       message: 'Customer synced to CleverTap',
     });
