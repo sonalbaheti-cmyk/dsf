@@ -25,6 +25,10 @@ function verifyShopifyWebhook(req: NextRequest, body: Buffer): boolean {
 // Extract customer ID from payload
 function extractCustomerId(payload: any): string | null {
   if (payload?.id) return String(payload.id);
+  if (payload?.customerId) {
+    const parts = String(payload.customerId).split('/');
+    return parts[parts.length - 1];
+  }
   if (payload?.customer?.id) return String(payload.customer.id);
   if (payload?.admin_graphql_api_id) {
     const parts = String(payload.admin_graphql_api_id).split('/');
@@ -181,44 +185,25 @@ export async function POST(request: NextRequest) {
     const shopDomain = request.headers.get('X-Shopify-Shop-Domain') || 'unknown';
     const webhookId = request.headers.get('X-Shopify-Webhook-Id') || 'unknown';
 
-    // Respond fast to Shopify
-    console.log('Webhook received', {
-      topic,
-      shopDomain,
-      webhookId,
-    });
+    console.log('Webhook received', { topic, shopDomain, webhookId });
 
     // Extract customer ID
     const customerId = extractCustomerId(payload);
 
     if (!customerId) {
-      console.error('No customer ID found', {
-        topic,
-        shopDomain,
-        webhookId,
-        payload,
-      });
-      return NextResponse.json(
-        { error: 'No customer ID found' },
-        { status: 400 }
-      );
+      console.error('No customer ID found', { topic, shopDomain, webhookId, payload });
+      return NextResponse.json({ error: 'No customer ID found' }, { status: 400 });
     }
 
     // Fetch latest customer from Shopify
     const latestCustomer = await fetchLatestCustomer(customerId);
 
     if (!latestCustomer) {
-      console.error('Customer not found in Shopify', {
-        customerId,
-        topic,
-      });
-      return NextResponse.json(
-        { error: 'Customer not found' },
-        { status: 404 }
-      );
+      console.error('Customer not found in Shopify', { customerId, topic });
+      return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
     }
 
-    // Build CleverTap payload with tags
+    // Build and send CleverTap payload
     const ctPayload = buildCleverTapPayload(latestCustomer);
     const ctResponse = await sendToCleverTap(ctPayload);
 
@@ -238,12 +223,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Webhook processing failed', error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Internal Server Error',
-      },
+      { error: error instanceof Error ? error.message : 'Internal Server Error' },
       { status: 500 }
     );
   }
