@@ -115,10 +115,14 @@ function buildCleverTapPayload(customer: any): any {
     customer.displayName ||
     `${customer.firstName || ''} ${customer.lastName || ''}`.trim();
 
+  // Use phone as identity (with country code e.g. +919876543210)
+  // fallback to email, then shopify customer ID
+  const identity = phone || email || customerId;
+
   return {
     d: [
       {
-        identity: customerId,
+        identity: identity,
         type: 'profile',
         profileData: {
           shopify_customer_id: customerId,
@@ -210,6 +214,7 @@ export async function POST(request: NextRequest) {
     console.log('Synced to CleverTap', {
       topic,
       customerId,
+      identity: latestCustomer.defaultPhoneNumber?.phoneNumber || latestCustomer.defaultEmailAddress?.emailAddress || customerId,
       tags: latestCustomer.tags,
       ctResponse,
     });
