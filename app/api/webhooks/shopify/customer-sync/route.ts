@@ -115,7 +115,6 @@ function buildCleverTapPayload(customer: any): any {
     customer.displayName ||
     `${customer.firstName || ''} ${customer.lastName || ''}`.trim();
 
-  // Phone as identity → fallback email → fallback shopify ID
   const identity = phone || email || customerId;
 
   return {
@@ -128,8 +127,7 @@ function buildCleverTapPayload(customer: any): any {
           ...(email ? { Email: email } : {}),
           ...(phone ? { Phone: phone } : {}),
           ...(name ? { Name: name } : {}),
-          shopify_tags: tags,
-          shopify_tags_csv: tags.join(','),
+          Tags: tags.join(','),
           shopify_created_at: customer.createdAt,
           shopify_updated_at: customer.updatedAt,
         },
