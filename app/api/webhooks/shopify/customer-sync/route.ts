@@ -25,10 +25,6 @@ function verifyShopifyWebhook(req: NextRequest, body: Buffer): boolean {
 // Extract customer ID from payload
 function extractCustomerId(payload: any): string | null {
   if (payload?.id) return String(payload.id);
-  if (payload?.customerId) {
-    const parts = String(payload.customerId).split('/');
-    return parts[parts.length - 1];
-  }
   if (payload?.customer?.id) return String(payload.customer.id);
   if (payload?.admin_graphql_api_id) {
     const parts = String(payload.admin_graphql_api_id).split('/');
@@ -182,6 +178,12 @@ export async function POST(request: NextRequest) {
     const shopDomain = request.headers.get('X-Shopify-Shop-Domain') || 'unknown';
     const webhookId = request.headers.get('X-Shopify-Webhook-Id') || 'unknown';
 
+    // Only handle customers/update — ignore everything else
+    if (topic !== 'customers/update') {
+      console.log('Ignoring topic', { topic });
+      return NextResponse.json({ skipped: true, reason: 'Topic not handled' }, { status: 200 });
+    }
+
     console.log('Webhook received', { topic, shopDomain, webhookId });
 
     const customerId = extractCustomerId(payload);
@@ -196,6 +198,15 @@ export async function POST(request: NextRequest) {
     if (!latestCustomer) {
       console.error('Customer not found in Shopify', { customerId, topic });
       return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
+    }
+
+    // Only sync customers who have the Slurrp-it-up tag
+    const hasSlurrpTag = Array.isArray(latestCustomer.tags) &&
+      latestCustomer.tags.includes('Slurrp-it-up');
+
+    if (!hasSlurrpTag) {
+      console.log('Skipping — no Slurrp-it-up tag', { customerId });
+      return NextResponse.json({ skipped: true, reason: 'No Slurrp-it-up tag' }, { status: 200 });
     }
 
     const ctPayload = buildCleverTapPayload(latestCustomer);
